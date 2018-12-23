@@ -3,13 +3,63 @@ IDs = {}
 
 RegisterServerEvent("storeVehicleDetails")
 AddEventHandler("storeVehicleDetails", function(owner, plate, insured, flags)
-    Vehicles[plate] = {owner = owner, plate = plate, insured = not not insured, flags = flags}
+    if GlobalConfig.UseDatabase then
+        MySQL.Async.execute("INSERT INTO `Vehicles` (`Plate`, `Owner`, `Insured`, `Flags`) VALUES (@Plate, @Owner, @Insured, @Flags) "..
+        "ON DUPLICATE KEY UPDATE `Owner` = @Owner, `Insured` = @Insured, `Flags` = @Flags", {
+            ["@Owner"] = owner, 
+            ["@Plate"] = plate,
+            ["@Insured"] = insured and 1 or 0,
+            ["@Flags"] = flags
+        }, function()end)
+    else
+        Vehicles[plate] = {Owner = owner, Plate = plate, Insured = not not insured, Flags = flags}
+    end
 end)
 
 RegisterServerEvent("storeIDDetails")
 AddEventHandler("storeIDDetails", function(FirstName, LastName, DOB, Flags)
-    IDs[FirstName .. " " .. LastName] = {FirstName = FirstName, LastName = LastName, DOB = DOB, Flags = Flags}
+    if GlobalConfig.UseDatabase then
+        MySQL.Async.execute("INSERT INTO `IDs` (`FirstName`, `LastName`, `DOB`, `Flags`) VALUES (@FirstName, @LastName, @DOB, @Flags) "..
+        "ON DUPLICATE KEY UPDATE `FirstName` = @FirstName, `LastName` = @LastName, `DOB` = @DOB, `Flags` = @Flags", {
+            ["@FirstName"] = FirstName, 
+            ["@LastName"] = LastName,
+            ["@DOB"] = DOB,
+            ["@Flags"] = Flags
+        }, function()end)
+    else
+        IDs[FirstName .. " " .. LastName] = {FirstName = FirstName, LastName = LastName, DOB = DOB, Flags = Flags}
+    end
 end)
+
+function GetVehicles(cb)
+    if GlobalConfig.UseDatabase then
+        CB = cb
+        MySQL.Async.fetchAll("SELECT * FROM `Vehicles`", {}, function (result)
+            local VehList = {}
+            for k, p in pairs(result) do
+                VehList[p.Plate] = {Owner = p.Owner, Plate = p.Plate, Insured = (tonumber(p.Insured) == 1) and true or false, Flags = p.Flags}
+            end
+            CB(VehList)
+        end)
+    else
+        cb(Vehicles)
+    end
+end
+
+function GetIds(cb)
+    if GlobalConfig.UseDatabase then
+        CB = cb
+        MySQL.Async.fetchAll("SELECT * FROM `IDs`", {}, function (result)
+            local IDList = {}
+            for k, p in pairs(result) do
+                IDList[p.FirstName .. " " .. p.LastName] = {FirstName = p.FirstName, LastName = p.LastName, DOB = p.DOB, Flags = p.Flags}
+            end
+            CB(IDList)
+        end)
+    else
+        cb(IDs)
+    end
+end
 
 RegisterCommand("vehcheck", function(source, args, raw)
     if #args < 1 then
@@ -17,23 +67,25 @@ RegisterCommand("vehcheck", function(source, args, raw)
         return
     end
 
-    veh = Vehicles[string.lower(table.remove(args))]
+    GetVehicles(function(VehList)
+        veh = VehList[string.lower(args[1])]
 
-    if veh == nil then
-        TriggerClientEvent("chat:addMessage", source, {args = {"^8MDT^0: ^8Vehicle is not registered!" }})
-        return
-    end
-
-    TriggerClientEvent("chat:addMessage", source, {
-        multiline = true,
-        args = {
-            "^2MDT^0: Vehicles Details: \n" ..
-            "^5Plate^0: " .. string.upper(veh.plate) .. "\n" ..
-            "^4Owner^0: " .. veh.owner .. "\n" ..
-            "^3Insured^0: " .. ((veh.insured) and "^2" or "^8") .. tostring(veh.insured) .. "\n" ..
-            "^2Flags^0: " .. veh.flags
-        }
-    })
+        if veh == nil then
+            TriggerClientEvent("chat:addMessage", source, {args = {"^8MDT^0: ^8Vehicle is not registered!" }})
+            return
+        end
+    
+        TriggerClientEvent("chat:addMessage", source, {
+            multiline = true,
+            args = {
+                "^2MDT^0: Vehicles Details: \n" ..
+                "^5Plate^0: " .. string.upper(veh.Plate) .. "\n" ..
+                "^4Owner^0: " .. veh.Owner .. "\n" ..
+                "^3Insured^0: " .. ((veh.Insured) and "^2" or "^8") .. tostring(veh.Insured) .. "\n" ..
+                "^2Flags^0: " .. veh.Flags
+            }
+        })
+    end)
 end, false)
 
 RegisterCommand("idcheck", function(source, args, raw)
@@ -49,44 +101,46 @@ RegisterCommand("idcheck", function(source, args, raw)
         DOB = args[3]
     end
 
-    NameMatches = 0
+    GetIds(function(IDList)
+        NameMatches = 0
 
-    ID = nil
-    for k, p in pairs(IDs) do
-        if LowerComparison(p.FirstName, FirstName) and LowerComparison(p.LastName, LastName) then
-            if DOB ~= nil then
-                if LowerComparison(DOB, p.DOB) then
-                    ID = p
+        ID = nil
+        for k, p in pairs(IDList) do
+            if LowerComparison(p.FirstName, FirstName) and LowerComparison(p.LastName, LastName) then
+                if DOB ~= nil then
+                    if LowerComparison(DOB, p.DOB) then
+                        ID = p
+                    else
+                        NameMatches = NameMatches + 1
+                    end
                 else
-                    NameMatches = NameMatches + 1
+                    ID = p
+                    break
                 end
-            else
-                ID = p
-                break
             end
         end
-    end
 
-    if ID == nil then
-        if NameMatches > 0 then
-            TriggerClientEvent("chat:addMessage", source, {args = {"^1SYSTEM^0:^3 ID with this name and DOB not found," .. 
-            " however there was " .. tostring(NameMatches) .. " name match(es), you may try searching without a DOB."}})
-            return
-        else
-            TriggerClientEvent("chat:addMessage", source, {args = {"^1SYSTEM^0:^8 ID with this name and DOB not found!"}})
-            return
+        if ID == nil then
+            if NameMatches > 0 then
+                TriggerClientEvent("chat:addMessage", source, {args = {"^1SYSTEM^0:^3 ID with this name and DOB not found," .. 
+                " however there was " .. tostring(NameMatches) .. " name match(es), you may try searching without a DOB."}})
+                return
+            else
+                TriggerClientEvent("chat:addMessage", source, {args = {"^1SYSTEM^0:^8 ID with this name and DOB not found!"}})
+                return
+            end
         end
-    end
 
-    TriggerClientEvent("chat:addMessage", source, {
-        multiline = true,
-        args = {
-            "^2SYSTEM^0: Person Details: \n" ..
-            "^5Name^0: " .. ID.FirstName .. " " .. ID.LastName .. "\n" ..
-            "^4DOB^0: " .. ID.DOB .. "\n" ..
-            "^2Flags^0: " .. ID.Flags
-        }
-    })
+        TriggerClientEvent("chat:addMessage", source, {
+            multiline = true,
+            args = {
+                "^2SYSTEM^0: Person Details: \n" ..
+                "^5Name^0: " .. ID.FirstName .. " " .. ID.LastName .. "\n" ..
+                "^4DOB^0: " .. ID.DOB .. "\n" ..
+                "^2Flags^0: " .. ID.Flags
+            }
+        })
+    end)
 end, false)
 
 
