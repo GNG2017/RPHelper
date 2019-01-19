@@ -8,15 +8,20 @@ function Load()
         IDs = IDsFile and json.decode(IDsFile) or {}
         Vehicles = VehiclesFile and json.decode(VehiclesFile) or {}
         Citizen.CreateThread(AutoSave)
+        RegisterCommand("saverphelper", Save, true)
     end
+end
+
+function Save()
+    SaveResourceFile(GetCurrentResourceName(), "./IDs.json", json.encode(IDs))
+    SaveResourceFile(GetCurrentResourceName(), "./Vehicles.json", json.encode(Vehicles))
+    if GlobalConfig.AnounceSaveConsole then Citizen.Trace("RPHelper saved!\n") end
 end
 
 function AutoSave()
     while true do
         Citizen.Wait(GlobalConfig.AutosaveTime * 1000)
-        SaveResourceFile(GetCurrentResourceName(), "./IDs.json", json.encode(IDs))
-        SaveResourceFile(GetCurrentResourceName(), "./Vehicles.json", json.encode(Vehicles))
-        if GlobalConfig.AnounceSaveConsole then Citizen.Trace("RPHelper saved!\n") end
+        Save()
     end
 end
 
