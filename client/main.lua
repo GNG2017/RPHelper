@@ -90,6 +90,6 @@ Citizen.CreateThread(function()
         {name = "Last Name", help = "Last name of the person"},
         {name = "DOB", help = "DOB of the person (not required)"},
     })
-    Citizen.Trace("Script made by @GNG2017")
+    Citizen.Trace("RPHelper script made by @GNG2017")
 end)
 
